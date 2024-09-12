@@ -1,0 +1,98 @@
+﻿@page "/"
+@page "/logentry-manager"
+@using LoggerViewer.Models
+@inject HttpClient Http
+
+<div class="container">
+    <h1 class="title">Log Entry Manager</h1>
+
+    @if (logEntries == null)
+    {
+        <p class="loading-text">Loading...</p>
+    }
+    else
+    {
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th>Id</th>
+                    <th>MPN</th>
+                    <th>Manufacturer</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in logEntries)
+                {
+                    <tr>
+                        <td>@entry.Id</td>
+                        <td>@entry.Mpn</td>
+                        <td>@entry.Manufacturer</td>
+                        <td>
+                            <button class="btn btn-primary" @onclick="() => EditLogEntry(entry)">Edit</button>
+                            <button class="btn btn-danger" @onclick="() => DeleteLogEntry(entry.Id)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div class="form-container">
+        <h2 class="form-title">@((isEditing) ? "Edit Log Entry" : "Create New Log Entry")</h2>
+
+        <EditForm Model="@logEntry" OnValidSubmit="HandleValidSubmit">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="form-group">
+                <label for="mpn">MPN:</label>
+                <InputText id="mpn" class="form-control" @bind-Value="logEntry.Mpn" />
+            </div>
+            <div class="form-group">
+                <label for="manufacturer">Manufacturer:</label>
+                <InputText id="manufacturer" class="form-control" @bind-Value="logEntry.Manufacturer" />
+            </div>
+            <button type="submit" class="btn btn-success">@((isEditing) ? "Update" : "Create")</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private List<LogEntry> logEntries;
+    private LogEntry logEntry = new LogEntry();
+    private bool isEditing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        logEntries = await Http.GetFromJsonAsync<List<LogEntry>>("api/logentries");
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (isEditing)
+        {
+            await Http.PutAsJsonAsync($"api/logentries/{logEntry.Id}", logEntry);
+        }
+        else
+        {
+            await Http.PostAsJsonAsync("api/logentries", logEntry);
+        }
+
+        logEntries = await Http.GetFromJsonAsync<List<LogEntry>>("api/logentries");
+        logEntry = new LogEntry();
+        isEditing = false;
+    }
+
+    private void EditLogEntry(LogEntry entry)
+    {
+        logEntry = entry;
+        isEditing = true;
+    }
+
+    private async Task DeleteLogEntry(int id)
+    {
+        await Http.DeleteAsync($"api/logentries/{id}");
+        logEntries = await Http.GetFromJsonAsync<List<LogEntry>>("api/logentries");
+    }
+}
