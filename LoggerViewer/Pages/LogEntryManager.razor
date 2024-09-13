@@ -1,45 +1,91 @@
 ﻿@page "/"
 @page "/logentry-manager"
 @using LoggerViewer.Models
-@inject HttpClient Http
+@using LoggerViewer.Services
+@inject LogEntryService LogEntryService
 
 <div class="container">
     <h1 class="title">Log Entry Manager</h1>
 
-    @if (logEntries == null)
-    {
-        <p class="loading-text">Loading...</p>
-    }
-    else
-    {
-        <table class="log-table">
-            <thead>
-                <tr>
-                    <th>Id</th>
-                    <th>MPN</th>
-                    <th>Manufacturer</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var entry in logEntries)
-                {
-                    <tr>
-                        <td>@entry.Id</td>
-                        <td>@entry.Mpn</td>
-                        <td>@entry.Manufacturer</td>
-                        <td>
-                            <button class="btn btn-primary" @onclick="() => EditLogEntry(entry)">Edit</button>
-                            <button class="btn btn-danger" @onclick="() => DeleteLogEntry(entry.Id)">Delete</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+    <div class="databases-container" style="display: flex; justify-content: space-between;">
+        <div class="database-section @((isSourceDatabase) ? "selected" : "")" style="flex: 1; margin-right: 10px; cursor: pointer;" @onclick="() => SelectDatabase(true)">
+            <h2>Source Database</h2>
+            @if (sourceLogEntries == null)
+            {
+                <p class="loading-text">Loading...</p>
+            }
+            else
+            {
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>MPN</th>
+                            <th>Manufacturer</th>
+                            <th>MpnGroupGuid</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in sourceLogEntries)
+                        {
+                            <tr>
+                                <td>@entry.Id</td>
+                                <td>@entry.Mpn</td>
+                                <td>@entry.Manufacturer</td>
+                                <td>@entry.MpnGroupGuid</td>
+                                <td>
+                                    <button class="btn btn-primary" @onclick="@(e => EditLogEntry(entry, true))">Edit</button>
+                                    <button class="btn btn-danger" @onclick="@(async e => await DeleteLogEntry(entry.Id, true))">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="database-section @((!isSourceDatabase) ? "selected" : "")" style="flex: 1; margin-left: 10px; cursor: pointer;" @onclick="() => SelectDatabase(false)">
+            <h2>Destination Database</h2>
+            @if (destinationLogEntries == null)
+            {
+                <p class="loading-text">Loading...</p>
+            }
+            else
+            {
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>MPN</th>
+                            <th>Manufacturer</th>
+                            <th>MpnGroupGuid</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in destinationLogEntries)
+                        {
+                            <tr>
+                                <td>@entry.Id</td>
+                                <td>@entry.Mpn</td>
+                                <td>@entry.Manufacturer</td>
+                                <td>@entry.MpnGroupGuid</td>
+                                <td>
+                                    <button class="btn btn-primary" @onclick="@(e => EditLogEntry(entry, false))">Edit</button>
+                                    <button class="btn btn-danger" @onclick="@(async e => await DeleteLogEntry(entry.Id, false))">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
 
     <div class="form-container">
         <h2 class="form-title">@((isEditing) ? "Edit Log Entry" : "Create New Log Entry")</h2>
+        <p>Selected Database: @((isSourceDatabase) ? "Source" : "Destination")</p>
 
         <EditForm Model="@logEntry" OnValidSubmit="HandleValidSubmit">
             <DataAnnotationsValidator />
@@ -59,40 +105,77 @@
 </div>
 
 @code {
-    private List<LogEntry> logEntries;
+    private List<LogEntry>? sourceLogEntries;
+    private List<LogEntry>? destinationLogEntries;
     private LogEntry logEntry = new LogEntry();
     private bool isEditing;
+    private bool isSourceDatabase = true;
 
     protected override async Task OnInitializedAsync()
     {
-        logEntries = await Http.GetFromJsonAsync<List<LogEntry>>("api/logentries");
+        await LoadLogEntries();
+    }
+
+    private async Task LoadLogEntries()
+    {
+        sourceLogEntries = await LogEntryService.GetSourceLogEntriesAsync();
+        destinationLogEntries = await LogEntryService.GetDestinationLogEntriesAsync();
     }
 
     private async Task HandleValidSubmit()
     {
         if (isEditing)
         {
-            await Http.PutAsJsonAsync($"api/logentries/{logEntry.Id}", logEntry);
+            if (isSourceDatabase)
+            {
+                await LogEntryService.UpdateSourceLogEntryAsync(logEntry);
+            }
+            else
+            {
+                await LogEntryService.UpdateDestinationLogEntryAsync(logEntry);
+            }
         }
         else
         {
-            await Http.PostAsJsonAsync("api/logentries", logEntry);
+            logEntry.MpnGroupGuid = Guid.NewGuid(); 
+            if (isSourceDatabase)
+            {
+                await LogEntryService.CreateSourceLogEntryAsync(logEntry);
+            }
+            else
+            {
+                await LogEntryService.CreateDestinationLogEntryAsync(logEntry);
+            }
         }
 
-        logEntries = await Http.GetFromJsonAsync<List<LogEntry>>("api/logentries");
+        await LoadLogEntries();
         logEntry = new LogEntry();
         isEditing = false;
     }
 
-    private void EditLogEntry(LogEntry entry)
+    private void EditLogEntry(LogEntry entry, bool isSource)
     {
         logEntry = entry;
         isEditing = true;
+        isSourceDatabase = isSource;
     }
 
-    private async Task DeleteLogEntry(int id)
+    private async Task DeleteLogEntry(int id, bool isSource)
     {
-        await Http.DeleteAsync($"api/logentries/{id}");
-        logEntries = await Http.GetFromJsonAsync<List<LogEntry>>("api/logentries");
+        if (isSource)
+        {
+            await LogEntryService.DeleteSourceLogEntryAsync(id);
+        }
+        else
+        {
+            await LogEntryService.DeleteDestinationLogEntryAsync(id);
+        }
+
+        await LoadLogEntries();
+    }
+
+    private void SelectDatabase(bool isSource)
+    {
+        isSourceDatabase = isSource;
     }
 }
